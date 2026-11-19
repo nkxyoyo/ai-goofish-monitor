@@ -126,6 +126,31 @@ python -m scraper_kit "https://example.com/search?q=test&page=1" --dump
 
 命令行还支持 `--manual`（手动过验证）和 `--state-dir`（Cookie 目录）。
 
+### 复杂嵌套 HTML 的解析手法
+
+目标数据埋在很深的标签里时，核心原则是**"稳定锚点 + 锚点内相对搜索"**，
+不要描述从根到目标的完整路径：
+
+```python
+# ① 锚点：先锁定重复单元容器（条目、卡片、行）
+for card in soup.select("div.video-card"):
+    # ② 层级跳跃：后代选择器天然跨层，中间包多少层 div 都无所谓
+    title = card.select_one("a.title")
+    # ③ 备选链：同一字段在不同结构里（多模板/改版共存）时用 or 串联
+    duration = sel_text(card, ".dur") or sel_text(card, "span.duration")
+    # ④ 属性优先：数据常在 href/src/data-* 里而不是文本里
+    vid = sel_attr(card, ".thumb", "data-id")
+```
+
+四种补充手段：
+
+- **邻域回溯**：目标节点本身没特征但兄弟/父级有时——`node.find_parent("div", class_="card")`、`node.find_next_sibling("a")`
+- **script 注水数据**：若数据在 `<script>` 的 JSON 里（如 `window.__INITIAL_STATE__ = {...}`），用正则截取 + `json.loads`，比解析 DOM 更稳
+- **语义类名优先**：选 class/id/data-* 这类"语义特征"，避开 `nth-child` 等位置依赖（改版即失效）
+- **Console 先行验证**：`document.querySelectorAll("选择器").length` 的命中数必须等于页面上可见的条目数，再写进 Parser
+
+**忌讳**：直接粘贴浏览器 Copy selector 生成的机器路径（`#app > div:nth-child(3) > ...`）——中间任何一层结构变化全盘失效。
+
 ## 架构与运行逻辑
 
 ```
@@ -152,6 +177,87 @@ python -m scraper_kit "https://example.com/search?q=test&page=1" --dump
 2. 当前页 HTML 与上一页完全相同（防"超页回显首页"陷阱）
 3. 你的 Parser 返回 `is_last_page=True`（最精确，建议实现）
 4. 达到 `max_pages` 上限（默认 50，安全兜底）
+
+## 组件内部实现与逻辑
+
+本节面向想读懂或修改源码的使用者，按模块讲清内部是怎么跑的。
+
+### 请求生命周期：`TieredFetcher.fetch(url)`
+
+```
+fetch(url)
+ ├─ 重试循环（最多 max_retries + 1 次尝试）
+ │   └─ _fetch_once(url)
+ │       ├─ curl_cffi 发 GET（Chrome TLS 指纹 + 固定 UA）
+ │       ├─ 网络异常 ──► 包装为 FetchError ──► 指数退避后重试
+ │       ├─ HTTP 429 ──► RateLimitedError ──► 指数退避后重试
+ │       ├─ looks_like_challenge() 为真 ──► 升级 _browser_fetch()（见下）
+ │       ├─ HTTP ≥ 400 ──► FetchError ──► 退避后重试
+ │       └─ HTTP 200 ──► Cookie 落盘 ──► 返回 HTML
+ ├─ ChallengeBlockedError ──► 直接上抛不重试（重试只会激化风控）
+ └─ 重试耗尽 ──► 抛出最后一次的错误
+```
+
+退避公式：`backoff_base × 2^attempt + 随机抖动[0,1)`，即约 2s、4s、8s 递增。
+
+挑战识别 `looks_like_challenge()` 的三条依据（任一命中即判定）：
+
+1. 响应头 `cf-mitigated: challenge`（最可靠，Cloudflare 官方信号）
+2. HTML 含固定标记（`just a moment` / `challenge-platform` / `cf_chl_opt` 等，全小写匹配）
+3. 状态码 403/503 且页面内容提到 cloudflare
+
+### 浏览器层：`_browser_fetch(url, manual)`
+
+1. **懒导入** playwright——未安装时抛出带安装指引的 `ChallengeBlockedError`
+2. 启动 Chromium（`--disable-blink-features=AutomationControlled` 等反检测参数；代理透传）
+3. 建上下文：**固定 UA（与 Tier1 同一个）** + 视口 + locale + 反检测注入（删除 `navigator.webdriver`、补 `window.chrome`）
+4. 注入从磁盘加载的 Cookie——若 `cf_clearance` 未过期，直接免验证通过
+5. `goto` 后进入检测循环：每秒 `page.content()` 判断挑战是否消失；期间自动尝试点击 `challenges.cloudflare.com` iframe 内的验证复选框；manual 模式则打印提示等待人工操作
+6. 结束：`context.cookies()` 落盘 → 关闭浏览器 → **用新 Cookie 重建 Tier1 会话**（后续请求回到高速通道）
+7. 超时后仍是挑战页 → 抛 `ChallengeBlockedError`（附三条解决建议）
+
+### Cookie 存储与流转
+
+存储格式（`state_dir/cookies.json`）：
+
+```json
+{"user_agent": "Mozilla/5.0 ...",
+ "cookies": [{"name": "cf_clearance", "value": "...", "domain": ".example.com",
+              "path": "/", "expires": 1760000000, "secure": true}]}
+```
+
+- **写入时机**：Tier1 每次成功响应后（服务端可能下发新 Cookie）+ 浏览器层结束时
+- **读取时机**：新建任何一层会话之前
+- **读取时处理**：跳过已过期条目；存储时的 UA 与当前配置不一致时打 WARNING（`cf_clearance` 与 UA 绑定，换 UA 即失效——只提醒不丢弃）
+- **格式转换链**：磁盘统一 dict ↔ stdlib CookieJar（Tier1）↔ playwright `add_cookies` 格式（浏览器层，自动补 `sameSite`）
+
+### 搜索翻页状态机：`SearchScraper.search(keyword)`
+
+三个状态变量：`page`（页码）、`prev_hash`（上一页 HTML 的 MD5）、`next_url`（Parser 返回的真实下一页链接，**优先于模板**）。
+
+```
+取 URL（next_url 优先；否则模板 format(keyword=quote(关键字), page=N)）
+ → fetch → parse_page
+ → items 为空？────── 停
+ → HTML 哈希 == prev_hash？── 停（超页回显保护）
+ → yield 全部 items
+ → is_last_page？───── 停
+ → 达到 max_pages？─── 停
+ → 页间随机延迟 → page+1 → 循环
+```
+
+`search_many` 只是在关键字之间额外插入 `keyword_delay_range` 随机延迟，产出 `(keyword, item)` 元组。
+
+### 设计取舍（为什么这样实现）
+
+| 决策 | 原因 |
+|---|---|
+| curl_cffi 而非 requests/httpx | Cloudflare 检测的大头是 TLS/JA3 指纹，curl_cffi 在 TLS 握手层直接模拟 Chrome |
+| 同步 API | 上层批量编排最直观；且 sync_playwright 无法运行在 asyncio 事件循环内 |
+| 挑战失败立即上抛不重试 | 验证失败后继续请求是最快触发 IP 封禁的方式，把决策权交给使用者 |
+| 顺序请求、不提供并发 | 并发 = 请求速率飙升 + 行为特征明显；安全优先于速度 |
+| 每次成功响应都写 Cookie 文件 | 代价仅几百字节 IO，收益是进程随时重启都不丢过检状态 |
+| UA 全程固定单一值 | cf_clearance 与 UA 绑定，一致性是 Cookie 可复用的前提 |
 
 ## 配置参考（`ScrapeConfig` 全部字段）
 
