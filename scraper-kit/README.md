@@ -159,6 +159,10 @@ for card in soup.select("div.video-card"):
                 MyParser（你写）          Cookie 持久化(.scraper_state/)
 ```
 
+![组件关系图](docs/architecture.svg)
+
+*组件协作架构：两个入口共用同一个抓取引擎（过检 Cookie 一份共享），★ 蓝色为你需要实现的部分*
+
 ### 三层抓取引擎
 
 | 层 | 实现 | 触发条件 | 单页耗时 |
@@ -177,6 +181,12 @@ for card in soup.select("div.video-card"):
 2. 当前页 HTML 与上一页完全相同（防"超页回显首页"陷阱）
 3. 你的 Parser 返回 `is_last_page=True`（最精确，建议实现）
 4. 达到 `max_pages` 上限（默认 50，安全兜底）
+
+### 单关键字运行流程
+
+![运行流程图](docs/flow.svg)
+
+*搜索采集的运行时序（DetailScraper 同链路但无翻页循环）：Cloudflare 挑战在引擎内自动处理，对 Parser 完全透明*
 
 ## 组件内部实现与逻辑
 
@@ -374,6 +384,9 @@ scraper-kit/
 │   ├── detail_scraper.py   # DetailScraper
 │   └── __main__.py         # 命令行探针（python -m scraper_kit）
 ├── tests/                  # 39 个测试（本地模拟站点：挑战/限流/翻页/Cookie）
+├── docs/
+│   ├── architecture.svg    # 组件关系图
+│   └── flow.svg             # 运行流程图
 ├── requirements.txt
 └── README.md
 ```

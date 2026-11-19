@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 520" font-family="'SF Pro Text','PingFang SC',system-ui,sans-serif">
+  <style>
+    .ct { fill: #171717; font: 400 14px/20px inherit; }
+    .ts { fill: #52525B; font: 400 12px/18px inherit; }
+    .th { fill: #171717; font: 500 14px/20px inherit; }
+    .node { fill: #EFEFF2; stroke: rgba(23,23,23,0.12); }
+    .node-b { fill: #F2F7FF; stroke: #4B3FE3; }
+    .pill { fill: #EFEFF2; stroke: rgba(23,23,23,0.12); }
+    .grp { fill: #F7F7F8; stroke: rgba(23,23,23,0.12); }
+    .arr { stroke: #52525B; stroke-width: 1.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+    .arr-b { stroke: #4B3FE3; stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+    .cap { fill: #F2F7FF; stroke: #4B3FE3; }
+    .capt { fill: #1A1759; font: 500 12px/18px inherit; }
+  </style>
+  <defs>
+    <marker id="mB" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path d="M1 1 L7 4 L1 7 Z" fill="#4B3FE3"/></marker>
+    <marker id="mN" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path d="M1 1 L7 4 L1 7 Z" fill="#52525B"/></marker>
+  </defs>
+  <rect width="720" height="520" fill="#F7F7F8"/>
+
+  <rect class="pill" x="280" y="16" width="160" height="36" rx="12"/>
+  <text class="ct" x="360" y="38" text-anchor="middle">search(keyword)</text>
+
+  <rect class="node" x="270" y="68" width="180" height="40" rx="8"/>
+  <text class="ct" x="360" y="92" text-anchor="middle">拼接 URL · page=N</text>
+
+  <rect class="node" x="265" y="124" width="190" height="52" rx="8"/>
+  <text class="th" x="360" y="146" text-anchor="middle">分层抓取</text>
+  <text class="ts" x="360" y="164" text-anchor="middle">挑战自动升级 · Cookie 复用</text>
+
+  <rect class="node-b" x="265" y="192" width="190" height="52" rx="8"/>
+  <text class="th" x="360" y="214" text-anchor="middle">MySearchParser</text>
+  <text class="ts" x="360" y="232" text-anchor="middle">★ 解析 HTML → items</text>
+
+  <rect class="pill" x="280" y="260" width="160" height="40" rx="12"/>
+  <text class="ct" x="360" y="284" text-anchor="middle">逐条 yield dict</text>
+
+  <path class="grp" d="M360 324 L460 360 L360 396 L260 360 Z"/>
+  <text class="th" x="360" y="354" text-anchor="middle">末页判定</text>
+  <text class="ts" x="360" y="374" text-anchor="middle">无结果/重复/上限</text>
+
+  <rect class="pill" x="280" y="440" width="160" height="40" rx="12"/>
+  <text class="ct" x="360" y="464" text-anchor="middle">生成器结束</text>
+
+  <path class="arr" d="M360 52 L360 64" marker-end="url(#mN)"/>
+  <path class="arr" d="M360 108 L360 120" marker-end="url(#mN)"/>
+  <path class="arr" d="M360 176 L360 188" marker-end="url(#mN)"/>
+  <path class="arr" d="M360 244 L360 256" marker-end="url(#mN)"/>
+  <path class="arr" d="M360 300 L360 320" marker-end="url(#mN)"/>
+  <path class="arr" d="M360 396 L360 436" marker-end="url(#mN)"/>
+  <text class="ts" x="372" y="422">是 · 完成</text>
+
+  <path class="arr-b" d="M460 360 L560 360 L560 88 L454 88" marker-end="url(#mB)"/>
+  <rect class="cap" x="478" y="58" width="130" height="18" rx="9"/>
+  <text class="capt" x="543" y="71" text-anchor="middle">page+1 · 随机延迟</text>
+
+  <text class="ts" x="40" y="505">每次请求之间插入随机延迟；命中挑战时在引擎内自动升级处理，对 Parser 透明</text>
+</svg>
